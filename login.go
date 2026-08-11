@@ -36,3 +36,54 @@ func (a *loginClient) Next(challenge []byte) (response []byte, err error) {
 func NewLoginClient(username, password string) Client {
 	return &loginClient{username, password}
 }
+
+// LoginAuthenticator authenticates a user with a username and password.
+type LoginAuthenticator func(username, password string) error
+
+type loginState int
+
+const (
+	loginNotStarted loginState = iota
+	loginWaitingUsername
+	loginWaitingPassword
+	loginFinished
+)
+
+type loginServer struct {
+	state              loginState
+	username, password string
+	authenticate       LoginAuthenticator
+}
+
+// A server implementation of the LOGIN authentication mechanism, as described
+// in https://tools.ietf.org/html/draft-murchison-sasl-login-00.
+//
+// LOGIN is obsolete and should only be enabled for legacy clients that cannot
+// be updated to use PLAIN.
+func NewLoginServer(authenticator LoginAuthenticator) Server {
+	return &loginServer{authenticate: authenticator}
+}
+
+func (a *loginServer) Next(response []byte) (challenge []byte, done bool, err error) {
+	switch a.state {
+	case loginNotStarted:
+		// Check for an initial response, as described in RFC 4422 section 3.
+		if response == nil {
+			a.state = loginWaitingUsername
+			return []byte("Username:"), false, nil
+		}
+		a.username = string(response)
+		a.state = loginWaitingPassword
+		return []byte("Password:"), false, nil
+	case loginWaitingUsername:
+		a.username = string(response)
+		a.state = loginWaitingPassword
+		return []byte("Password:"), false, nil
+	case loginWaitingPassword:
+		a.password = string(response)
+		a.state = loginFinished
+		return nil, true, a.authenticate(a.username, a.password)
+	default:
+		return nil, false, ErrUnexpectedClientResponse
+	}
+}

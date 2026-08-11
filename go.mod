@@ -1,3 +1,3 @@
-module github.com/emersion/go-sasl
+module github.com/Sticatel/go-sasl
 
 go 1.12

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/emersion/go-sasl"
+	"github.com/Sticatel/go-sasl"
 )
 
 func TestNewOAuthBearerClientNoHostOrPort(t *testing.T) {
@@ -165,4 +165,48 @@ func TestOAuthBearerServerAndClient(t *testing.T) {
 			t.Fatal("Exchange is not complete")
 		}
 	})
+}
+
+func TestOAuthBearerServerFailureResponse(t *testing.T) {
+	tests := []struct {
+		name       string
+		response   []byte
+		wantErrMsg string
+	}{
+		{
+			name:       "empty response",
+			response:   []byte{},
+			wantErrMsg: "sasl: invalid response",
+		},
+		{
+			name:       "multi-byte response",
+			response:   []byte{0x01, 0x01},
+			wantErrMsg: "sasl: invalid response",
+		},
+		{
+			name:       "required dummy response",
+			response:   []byte{0x01},
+			wantErrMsg: "sasl: client error: Invalid response",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := sasl.NewOAuthBearerServer(nil)
+			if _, done, err := s.Next([]byte("invalid")); err != nil || done {
+				t.Fatalf("malformed initial response: done=%v err=%v", done, err)
+			}
+
+			challenge, done, err := s.Next(tt.response)
+			if !done {
+				t.Error("failure exchange did not finish")
+			}
+			if len(challenge) != 0 {
+				t.Errorf("final challenge = %q, want empty", challenge)
+			}
+			if err == nil || err.Error() != tt.wantErrMsg {
+				t.Errorf("error = %v, want %q", err, tt.wantErrMsg)
+			}
+		})
+	}
 }
